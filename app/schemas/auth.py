@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel, EmailStr
 from app.models.user import UserRole
 
@@ -6,6 +6,26 @@ from app.models.user import UserRole
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+
+
+class RegisterRequest(BaseModel):
+    full_name: str
+    email: EmailStr
+    password: str
+    designation: Optional[str] = "Software Engineer"
+    department_id: Optional[str] = None
+    location_id: Optional[str] = None
+    role: Optional[UserRole] = UserRole.EMPLOYEE
+
+
+class OrgOption(BaseModel):
+    id: str
+    name: str
+
+
+class OrgMetaResponse(BaseModel):
+    departments: List[OrgOption]
+    locations: List[OrgOption]
 
 
 class TokenResponse(BaseModel):

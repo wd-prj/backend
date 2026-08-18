@@ -1,10 +1,13 @@
 import json
+import logging
 from typing import Any, List, Optional, Sequence
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_openai import ChatOpenAI
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class MockLeaveChatModel(BaseChatModel):
@@ -139,7 +142,6 @@ class MockLeaveChatModel(BaseChatModel):
                 "type": "tool_call",
             })
         elif any(w in user_text for w in ["august 20", "aug 20", "take leave", "request leave", "next friday", "can i take"]):
-            # Extract or default dates for demo
             start_d = "2026-08-20" if "aug" in user_text else "2026-08-21"
             end_d = "2026-08-25" if "aug" in user_text else "2026-08-21"
             tool_calls.append({
@@ -160,7 +162,6 @@ class MockLeaveChatModel(BaseChatModel):
                 "type": "tool_call",
             })
         else:
-            # Default to profile & balance lookup
             tool_calls.append({
                 "name": "get_leave_balance",
                 "args": {},
@@ -174,17 +175,21 @@ class MockLeaveChatModel(BaseChatModel):
 
 def get_ai_model() -> BaseChatModel:
     """
-    Model Factory supporting OpenAI, OpenRouter, Ollama, vLLM, and Mock.
+    Universal Model Factory supporting LiteLLM routing, OpenAI, OpenRouter, OpenCode Zen,
+    Ollama, vLLM, DeepSeek, Anthropic, Gemini, and resilient deterministic Mock fallback.
     """
     provider = settings.LLM_PROVIDER.lower().strip()
     api_key = settings.LLM_API_KEY.strip()
+    model_name = settings.LLM_MODEL.strip()
 
     if provider == "mock" or not api_key:
         return MockLeaveChatModel()
 
-    # OpenAI-compatible providers (OpenAI, OpenRouter, Ollama, vLLM)
+    # If model has provider prefix like openai/ or deepseek/ strip it for base url or pass directly
+    clean_model = model_name.replace("openai/", "").replace("deepseek/", "")
+
     return ChatOpenAI(
-        model=settings.LLM_MODEL,
+        model=clean_model,
         api_key=api_key,
         base_url=settings.LLM_BASE_URL if settings.LLM_BASE_URL else None,
         temperature=settings.LLM_TEMPERATURE,
