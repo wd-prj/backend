@@ -92,6 +92,19 @@ def invite_manager(
         db.add(team)
         db.flush()
 
+    # Find department leadership or fallback to current admin
+    dept_head_emp = (
+        db.query(Employee)
+        .join(User)
+        .filter(
+            Employee.department_id == dept.id,
+            User.role == UserRole.MANAGER,
+        )
+        .order_by(Employee.created_at.asc())
+        .first()
+    )
+    reporting_lead_id = dept_head_emp.id if dept_head_emp else (current_user.employee.id if current_user.employee else None)
+
     # Create Employee
     emp_code = f"MGR-{uuid.uuid4().hex[:6].upper()}"
     emp = Employee(
@@ -103,8 +116,8 @@ def invite_manager(
         department_id=dept.id,
         team_id=team.id,
         location_id=loc.id,
-        primary_manager_id=current_user.employee.id if current_user.employee else None,
-        manager_id=current_user.employee.id if current_user.employee else None,
+        primary_manager_id=reporting_lead_id,
+        manager_id=reporting_lead_id,
         designation=req.designation,
         hire_date=datetime.date.today(),
         is_active=False,

@@ -20,7 +20,7 @@ class ApprovalService:
         self.audit_service = AuditService(db)
 
     def get_pending_approvals(self, approver_employee_id: str) -> List[ApprovalStep]:
-        return (
+        candidate_steps = (
             self.db.query(ApprovalStep)
             .join(LeaveRequest, ApprovalStep.leave_request_id == LeaveRequest.id)
             .options(
@@ -37,6 +37,23 @@ class ApprovalService:
             .order_by(ApprovalStep.created_at.desc())
             .all()
         )
+
+        # Strictly enforce sequential workflow visibility:
+        # A step is only active for this approver if ALL previous steps (step_order < current_step.step_order)
+        # in the leave request have already been APPROVED or SKIPPED!
+        active_steps = []
+        for step in candidate_steps:
+            req_steps = sorted(step.leave_request.approval_steps, key=lambda s: s.step_order)
+            is_active = True
+            for prev_s in req_steps:
+                if prev_s.step_order < step.step_order:
+                    if prev_s.status not in (ApprovalStepStatus.APPROVED, ApprovalStepStatus.SKIPPED):
+                        is_active = False
+                        break
+            if is_active:
+                active_steps.append(step)
+
+        return active_steps
 
     def get_all_requests_for_manager(self, manager_employee_id: str) -> List[LeaveRequest]:
         return (

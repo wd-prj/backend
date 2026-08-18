@@ -101,15 +101,16 @@ class LeaveService:
             manager_name = employee.manager.full_name
             manager_email = employee.manager.email
 
-        # Find Department Head (a manager in the same department, or VP)
+        # Find Department Head (senior manager in the same department, e.g. VP)
         dept_head = (
             self.db.query(Employee)
             .join(User)
             .filter(
                 Employee.department_id == employee.department_id,
-                User.role.in_([UserRole.MANAGER, UserRole.HR_ADMIN]),
+                User.role == UserRole.MANAGER,
                 Employee.id != employee.id,
             )
+            .order_by(Employee.created_at.asc())
             .first()
         )
         if dept_head:
