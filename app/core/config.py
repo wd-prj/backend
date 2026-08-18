@@ -16,10 +16,10 @@ class Settings(BaseSettings):
     VERSION: str = "1.0.0"
     API_V1_STR: str = "/api/v1"
 
-    # Database
+    # Database (Supabase IPv4 Pooler Default)
     DATABASE_URL: str = os.getenv(
         "DATABASE_URL",
-        "postgresql+psycopg://postgres:swetha4106%23@db.xaunicirtzzklpmmenfa.supabase.co:5432/postgres",
+        "postgresql+psycopg://postgres.xaunicirtzzklpmmenfa:swetha4106%23@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres",
     )
 
     @field_validator("DATABASE_URL", mode="before")
