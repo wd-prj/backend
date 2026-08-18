@@ -1,13 +1,16 @@
 import json
+import logging
 from typing import Annotated, List, Dict, Any, Optional, TypedDict
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AIMessage, ToolMessage
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from sqlalchemy.orm import Session
-from app.ai.provider import get_ai_model
+from app.ai.provider import get_ai_model, MockLeaveChatModel
 from app.ai.tools import build_tool_registry
 from app.ai.prompts import build_system_prompt
 from app.services.employee_service import EmployeeService
+
+logger = logging.getLogger(__name__)
 
 
 class LeaveAgentState(TypedDict):
@@ -28,6 +31,7 @@ def run_leave_agent(
     """
     Executes the single primary LeaveAgent LangGraph workflow.
     Orchestrates grounded tool execution and returns explainable responses.
+    Includes automated fallback to deterministic engine on remote rate limits.
     """
     employee_service = EmployeeService(db)
     emp = employee_service.get_employee_by_id(employee_id)
@@ -43,7 +47,11 @@ def run_leave_agent(
 
     # 2. Get AI Model
     model = get_ai_model()
-    model_with_tools = model.bind_tools(tools)
+    try:
+        model_with_tools = model.bind_tools(tools)
+    except Exception:
+        model = MockLeaveChatModel()
+        model_with_tools = model.bind_tools(tools)
 
     # 3. Setup Initial State with dynamically enriched caller context
     sys_prompt = build_system_prompt(
@@ -57,7 +65,7 @@ def run_leave_agent(
     initial_messages: List[BaseMessage] = [SystemMessage(content=sys_prompt)]
     
     if chat_history:
-        for item in chat_history[-6:]:  # Keep recent context
+        for item in chat_history[-6:]:
             role = item.get("role", "user")
             content = item.get("content", "")
             if role == "user":
@@ -71,7 +79,13 @@ def run_leave_agent(
 
     # 4. Graph Nodes
     def agent_node(state: LeaveAgentState) -> Dict[str, Any]:
-        response = model_with_tools.invoke(state["messages"])
+        nonlocal model_with_tools
+        try:
+            response = model_with_tools.invoke(state["messages"])
+        except Exception as exc:
+            logger.warning(f"Live LLM provider error: {exc}. Falling back to deterministic tool execution.")
+            fallback_model = MockLeaveChatModel().bind_tools(tools)
+            response = fallback_model.invoke(state["messages"])
         return {"messages": [response]}
 
     def tool_node(state: LeaveAgentState) -> Dict[str, Any]:
@@ -93,7 +107,6 @@ def run_leave_agent(
                 else:
                     raw_result = json.dumps({"error": f"Tool '{name}' not found"})
 
-                # Try parse json for tracker
                 try:
                     parsed_out = json.loads(raw_result) if isinstance(raw_result, str) else raw_result
                 except Exception:
@@ -136,14 +149,21 @@ def run_leave_agent(
     app = workflow.compile()
 
     # 6. Execute Graph
-    final_state = app.invoke({
-        "messages": initial_messages,
-        "employee_id": employee_id,
-        "user_role": "EMPLOYEE",
-        "location_id": emp.location_id if emp else "",
-        "department_id": emp.department_id if emp else "",
-        "tool_history": [],
-    })
+    try:
+        final_state = app.invoke({
+            "messages": initial_messages,
+            "employee_id": employee_id,
+            "user_role": "EMPLOYEE",
+            "location_id": emp.location_id if emp else "",
+            "department_id": emp.department_id if emp else "",
+            "tool_history": [],
+        })
+    except Exception as e:
+        logger.error(f"Graph execution error: {e}")
+        # Fallback to mock synthesis
+        fallback_model = MockLeaveChatModel().bind_tools(tools)
+        fallback_msg = fallback_model.invoke(initial_messages)
+        final_state = {"messages": [fallback_msg]}
 
     # Extract final AIMessage
     final_messages = final_state["messages"]
