@@ -117,6 +117,21 @@ def seed_database():
         ]
         db.add_all(policies)
 
+        # 6b. Accrual Policies (Annual baseline entitlements per location)
+        accrual_policies = [
+            # Chennai
+            AccrualPolicy(leave_type_id=lt_annual.id, location_id=loc_chennai.id, frequency=AccrualFrequency.YEARLY, annual_entitlement=18.0, max_carry_forward=5.0),
+            AccrualPolicy(leave_type_id=lt_casual.id, location_id=loc_chennai.id, frequency=AccrualFrequency.YEARLY, annual_entitlement=12.0, max_carry_forward=0.0),
+            AccrualPolicy(leave_type_id=lt_sick.id, location_id=loc_chennai.id, frequency=AccrualFrequency.YEARLY, annual_entitlement=12.0, max_carry_forward=2.0),
+            AccrualPolicy(leave_type_id=lt_parental.id, location_id=loc_chennai.id, frequency=AccrualFrequency.YEARLY, annual_entitlement=90.0, max_carry_forward=0.0),
+            # Bangalore
+            AccrualPolicy(leave_type_id=lt_annual.id, location_id=loc_bangalore.id, frequency=AccrualFrequency.YEARLY, annual_entitlement=18.0, max_carry_forward=5.0),
+            AccrualPolicy(leave_type_id=lt_casual.id, location_id=loc_bangalore.id, frequency=AccrualFrequency.YEARLY, annual_entitlement=12.0, max_carry_forward=0.0),
+            AccrualPolicy(leave_type_id=lt_sick.id, location_id=loc_bangalore.id, frequency=AccrualFrequency.YEARLY, annual_entitlement=12.0, max_carry_forward=2.0),
+            AccrualPolicy(leave_type_id=lt_parental.id, location_id=loc_bangalore.id, frequency=AccrualFrequency.YEARLY, annual_entitlement=90.0, max_carry_forward=0.0),
+        ]
+        db.add_all(accrual_policies)
+
         # 7. Approval Workflows
         workflows = [
             ApprovalWorkflow(name="Short Absence (1-2 days)", min_working_days=1.0, max_working_days=2.0, step_order=1, required_role=ApprovalRole.MANAGER, description="Direct Manager Approval"),
