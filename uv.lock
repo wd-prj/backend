@@ -1852,6 +1852,19 @@ wheels = [
 ]
 
 [[package]]
+name = "resend"
+version = "2.36.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5d/6b/b9078b7f4db4f4ae63e0ef02fd503626af73b0a0ac95dde596107dbbf63e/resend-2.36.0.tar.gz", hash = "sha256:511c6eac529676e51b11467b6d14d897556e259d97f7013b06f2754c6568e0b3", size = 56038, upload-time = "2026-08-12T01:38:56.606Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/76/51/b669b36db8f91bbeb02f694cb932f20113b2520251c01be99cff1bd75be9/resend-2.36.0-py2.py3-none-any.whl", hash = "sha256:6e10002bcbd47dd4d83a5cc4bf4a40a918818dcd815ce7c26c824b60a7ce426e", size = 87362, upload-time = "2026-08-12T01:38:55.251Z" },
+]
+
+[[package]]
 name = "rpds-py"
 version = "2026.6.3"
 source = { registry = "https://pypi.org/simple" }
@@ -2351,6 +2364,7 @@ dependencies = [
     { name = "pytest-asyncio" },
     { name = "python-jose", extra = ["cryptography"] },
     { name = "python-multipart" },
+    { name = "resend" },
     { name = "sqlalchemy" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -2374,6 +2388,7 @@ requires-dist = [
     { name = "pytest-asyncio", specifier = ">=1.4.0" },
     { name = "python-jose", extras = ["cryptography"], specifier = ">=3.5.0" },
     { name = "python-multipart", specifier = ">=0.0.32" },
+    { name = "resend", specifier = ">=2.36.0" },
     { name = "sqlalchemy", specifier = ">=2.0.52" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.52.3" },
 ]

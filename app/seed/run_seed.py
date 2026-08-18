@@ -1,9 +1,10 @@
 import datetime
 from sqlalchemy.orm import Session
+from app.core.config import settings
 from app.core.database import SessionLocal, init_db
 from app.core.security import get_password_hash
-from app.models.user import User, UserRole
-from app.models.organization import Location, Department, HolidayCalendar, Holiday
+from app.models.user import User, UserRole, UserStatus
+from app.models.organization import Location, Department, Team, HolidayCalendar, Holiday
 from app.models.leave import LeaveType, LeavePolicy, EmployeeAccrual, AccrualPolicy, AccrualFrequency
 from app.models.employee import Employee
 from app.models.request import (
@@ -18,14 +19,16 @@ from app.models.audit import Notification, AuditLog
 
 
 def seed_database():
+    init_db()
     db: Session = SessionLocal()
     try:
         # Check if already seeded
         if db.query(User).count() > 0:
-            print("Database already contains data, skipping seed.")
+            print("Database already contains data, checking bootstrap HR Admin...")
+            ensure_bootstrap_admin(db)
             return
 
-        print("Seeding database with enterprise HR dataset...")
+        print("Seeding database with enterprise HR dataset & organizational hierarchy...")
 
         # 1. Locations
         loc_chennai = Location(
@@ -82,7 +85,16 @@ def seed_database():
         db.add_all([dept_eng, dept_hr, dept_fin])
         db.flush()
 
-        # 4. Leave Types
+        # 4. Teams (Multi-team per department)
+        team_platform = Team(name="Platform & Cloud Architecture", code="ENG-PLAT", department_id=dept_eng.id, description="Cloud infrastructure, DevOps and reliability")
+        team_core = Team(name="Core Backend Services", code="ENG-CORE", department_id=dept_eng.id, description="Core business logic and API services")
+        team_web = Team(name="Web Applications", code="ENG-WEB", department_id=dept_eng.id, description="Frontend interfaces and design systems")
+        team_people = Team(name="People Operations", code="HR-OPS", department_id=dept_hr.id, description="Employee experience and policy governance")
+        team_finance = Team(name="Financial Strategy", code="FIN-OPS", department_id=dept_fin.id, description="Financial planning and accounting")
+        db.add_all([team_platform, team_core, team_web, team_people, team_finance])
+        db.flush()
+
+        # 5. Leave Types
         lt_annual = LeaveType(name="Annual Leave (PTO)", code="ANNUAL", is_paid=True, color_code="#4f46e5", description="Earned annual vacation quota")
         lt_casual = LeaveType(name="Casual Leave", code="CASUAL", is_paid=True, color_code="#059669", description="Short personal leaves and contingencies")
         lt_sick = LeaveType(name="Sick Leave", code="SICK", is_paid=True, color_code="#d97706", description="Medical ailments and health recovery")
@@ -90,14 +102,14 @@ def seed_database():
         db.add_all([lt_annual, lt_casual, lt_sick, lt_parental])
         db.flush()
 
-        # 5. Policies (Distinct per location)
+        # 6. Policies (Distinct per location)
         policies = [
             # Chennai policies
             LeavePolicy(leave_type_id=lt_annual.id, location_id=loc_chennai.id, max_consecutive_days=10, advance_notice_days=3, carry_forward_limit=5.0, allow_negative_balance=False),
             LeavePolicy(leave_type_id=lt_casual.id, location_id=loc_chennai.id, max_consecutive_days=3, advance_notice_days=1, carry_forward_limit=0.0, allow_negative_balance=False),
             LeavePolicy(leave_type_id=lt_sick.id, location_id=loc_chennai.id, max_consecutive_days=10, requires_document_after_days=2, advance_notice_days=0, carry_forward_limit=5.0, allow_negative_balance=False),
             LeavePolicy(leave_type_id=lt_parental.id, location_id=loc_chennai.id, max_consecutive_days=90, advance_notice_days=30, carry_forward_limit=0.0, allow_negative_balance=False),
-            # Bangalore policies (Subtle location differences: higher max consecutive & carry forward)
+            # Bangalore policies
             LeavePolicy(leave_type_id=lt_annual.id, location_id=loc_bangalore.id, max_consecutive_days=12, advance_notice_days=2, carry_forward_limit=8.0, allow_negative_balance=False),
             LeavePolicy(leave_type_id=lt_casual.id, location_id=loc_bangalore.id, max_consecutive_days=3, advance_notice_days=1, carry_forward_limit=0.0, allow_negative_balance=False),
             LeavePolicy(leave_type_id=lt_sick.id, location_id=loc_bangalore.id, max_consecutive_days=12, requires_document_after_days=2, advance_notice_days=0, carry_forward_limit=8.0, allow_negative_balance=False),
@@ -105,7 +117,7 @@ def seed_database():
         ]
         db.add_all(policies)
 
-        # 6. Approval Workflows (Configurable multi-level rules)
+        # 7. Approval Workflows
         workflows = [
             ApprovalWorkflow(name="Short Absence (1-2 days)", min_working_days=1.0, max_working_days=2.0, step_order=1, required_role=ApprovalRole.MANAGER, description="Direct Manager Approval"),
             ApprovalWorkflow(name="Medium Absence (3-5 days) - Step 1", min_working_days=3.0, max_working_days=5.0, step_order=1, required_role=ApprovalRole.MANAGER, description="Direct Manager Approval"),
@@ -117,11 +129,43 @@ def seed_database():
         db.add_all(workflows)
         db.flush()
 
-        # 7. Users & Employees
+        # 8. Bootstrap HR Admin
+        admin_pwd_hash = get_password_hash(settings.BOOTSTRAP_ADMIN_PASSWORD)
+        u_admin = User(
+            email=settings.BOOTSTRAP_ADMIN_EMAIL,
+            password_hash=admin_pwd_hash,
+            role=UserRole.HR_ADMIN,
+            status=UserStatus.ACTIVE,
+            is_active=True,
+        )
+        db.add(u_admin)
+        db.flush()
+        emp_admin = Employee(
+            user_id=u_admin.id,
+            employee_code="EMP-BOOT-001",
+            first_name="Bootstrap",
+            last_name="HR Admin",
+            email=u_admin.email,
+            department_id=dept_hr.id,
+            team_id=team_people.id,
+            location_id=loc_bangalore.id,
+            designation="Principal HR Administrator",
+            hire_date=datetime.date(2020, 1, 1),
+        )
+        db.add(emp_admin)
+        db.flush()
+        team_people.manager_id = emp_admin.id
+
+        # 9. Enterprise Users & Employees
         default_pwd_hash = get_password_hash("password123")
 
-        # Sarah Jenkins (HR Lead / Admin)
-        u_sarah = User(email="sarah.jenkins@company.com", password_hash=default_pwd_hash, role=UserRole.HR_ADMIN)
+        # Sarah Jenkins (HR Lead)
+        u_sarah = User(
+            email="sarah.jenkins@company.com",
+            password_hash=default_pwd_hash,
+            role=UserRole.HR_ADMIN,
+            status=UserStatus.ACTIVE,
+        )
         db.add(u_sarah)
         db.flush()
         emp_sarah = Employee(
@@ -131,7 +175,9 @@ def seed_database():
             last_name="Jenkins",
             email=u_sarah.email,
             department_id=dept_hr.id,
+            team_id=team_people.id,
             location_id=loc_bangalore.id,
+            primary_manager_id=emp_admin.id,
             designation="Head of People & Culture",
             hire_date=datetime.date(2022, 3, 1),
             avatar_url="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80",
@@ -139,8 +185,13 @@ def seed_database():
         db.add(emp_sarah)
         db.flush()
 
-        # Ananya Deshmukh (VP of Engineering)
-        u_ananya = User(email="ananya.deshmukh@company.com", password_hash=default_pwd_hash, role=UserRole.MANAGER)
+        # Ananya Deshmukh (VP of Engineering / Platform Manager)
+        u_ananya = User(
+            email="ananya.deshmukh@company.com",
+            password_hash=default_pwd_hash,
+            role=UserRole.MANAGER,
+            status=UserStatus.ACTIVE,
+        )
         db.add(u_ananya)
         db.flush()
         emp_ananya = Employee(
@@ -150,16 +201,23 @@ def seed_database():
             last_name="Deshmukh",
             email=u_ananya.email,
             department_id=dept_eng.id,
+            team_id=team_platform.id,
             location_id=loc_bangalore.id,
-            designation="VP of Engineering",
+            designation="VP of Engineering & Platform Lead",
             hire_date=datetime.date(2021, 6, 15),
             avatar_url="https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150&auto=format&fit=crop&q=80",
         )
         db.add(emp_ananya)
         db.flush()
+        team_platform.manager_id = emp_ananya.id
 
-        # Rajesh Nair (Engineering Manager - Chennai)
-        u_rajesh = User(email="rajesh.nair@company.com", password_hash=default_pwd_hash, role=UserRole.MANAGER)
+        # Rajesh Nair (Core Services Engineering Manager - Chennai)
+        u_rajesh = User(
+            email="rajesh.nair@company.com",
+            password_hash=default_pwd_hash,
+            role=UserRole.MANAGER,
+            status=UserStatus.ACTIVE,
+        )
         db.add(u_rajesh)
         db.flush()
         emp_rajesh = Employee(
@@ -169,17 +227,25 @@ def seed_database():
             last_name="Nair",
             email=u_rajesh.email,
             department_id=dept_eng.id,
+            team_id=team_core.id,
             location_id=loc_chennai.id,
+            primary_manager_id=emp_ananya.id,
             manager_id=emp_ananya.id,
-            designation="Engineering Manager",
+            designation="Core Services Engineering Manager",
             hire_date=datetime.date(2022, 8, 1),
             avatar_url="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
         )
         db.add(emp_rajesh)
         db.flush()
+        team_core.manager_id = emp_rajesh.id
 
-        # Arun Kumar (Software Engineer II - Chennai)
-        u_arun = User(email="arun.kumar@company.com", password_hash=default_pwd_hash, role=UserRole.EMPLOYEE)
+        # Arun Kumar (Software Engineer II - Core Team Chennai)
+        u_arun = User(
+            email="arun.kumar@company.com",
+            password_hash=default_pwd_hash,
+            role=UserRole.EMPLOYEE,
+            status=UserStatus.ACTIVE,
+        )
         db.add(u_arun)
         db.flush()
         emp_arun = Employee(
@@ -189,7 +255,9 @@ def seed_database():
             last_name="Kumar",
             email=u_arun.email,
             department_id=dept_eng.id,
+            team_id=team_core.id,
             location_id=loc_chennai.id,
+            primary_manager_id=emp_rajesh.id,
             manager_id=emp_rajesh.id,
             designation="Software Engineer II",
             hire_date=datetime.date(2023, 4, 10),
@@ -198,8 +266,13 @@ def seed_database():
         db.add(emp_arun)
         db.flush()
 
-        # Priya Sharma (Senior Engineer - Bangalore)
-        u_priya = User(email="priya.sharma@company.com", password_hash=default_pwd_hash, role=UserRole.EMPLOYEE)
+        # Priya Sharma (Senior Engineer - Platform Team Bangalore)
+        u_priya = User(
+            email="priya.sharma@company.com",
+            password_hash=default_pwd_hash,
+            role=UserRole.EMPLOYEE,
+            status=UserStatus.ACTIVE,
+        )
         db.add(u_priya)
         db.flush()
         emp_priya = Employee(
@@ -209,17 +282,24 @@ def seed_database():
             last_name="Sharma",
             email=u_priya.email,
             department_id=dept_eng.id,
+            team_id=team_platform.id,
             location_id=loc_bangalore.id,
+            primary_manager_id=emp_ananya.id,
             manager_id=emp_ananya.id,
-            designation="Senior Software Engineer",
+            designation="Senior Platform Engineer",
             hire_date=datetime.date(2023, 1, 15),
             avatar_url="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
         )
         db.add(emp_priya)
         db.flush()
 
-        # Karthik Venkat (Peer Engineer in Chennai for conflict testing)
-        u_karthik = User(email="karthik.v@company.com", password_hash=default_pwd_hash, role=UserRole.EMPLOYEE)
+        # Karthik Venkat (DevOps Engineer - Core Team Chennai)
+        u_karthik = User(
+            email="karthik.v@company.com",
+            password_hash=default_pwd_hash,
+            role=UserRole.EMPLOYEE,
+            status=UserStatus.ACTIVE,
+        )
         db.add(u_karthik)
         db.flush()
         emp_karthik = Employee(
@@ -229,7 +309,9 @@ def seed_database():
             last_name="Venkat",
             email=u_karthik.email,
             department_id=dept_eng.id,
+            team_id=team_core.id,
             location_id=loc_chennai.id,
+            primary_manager_id=emp_rajesh.id,
             manager_id=emp_rajesh.id,
             designation="DevOps Engineer",
             hire_date=datetime.date(2023, 9, 1),
@@ -238,126 +320,136 @@ def seed_database():
         db.add(emp_karthik)
         db.flush()
 
-        # 8. Employee Accruals (2026)
-        all_emps = [emp_sarah, emp_ananya, emp_rajesh, emp_arun, emp_priya, emp_karthik]
+        # 10. Employee Accruals (2026)
+        all_emps = [emp_admin, emp_sarah, emp_ananya, emp_rajesh, emp_arun, emp_priya, emp_karthik]
         accruals = []
         for emp in all_emps:
             accruals.extend([
                 EmployeeAccrual(employee_id=emp.id, leave_type_id=lt_annual.id, year=2026, annual_entitlement=18.0, carried_over=3.0, manual_adjustments=0.0),
                 EmployeeAccrual(employee_id=emp.id, leave_type_id=lt_casual.id, year=2026, annual_entitlement=12.0, carried_over=0.0, manual_adjustments=0.0),
                 EmployeeAccrual(employee_id=emp.id, leave_type_id=lt_sick.id, year=2026, annual_entitlement=10.0, carried_over=2.0, manual_adjustments=0.0),
+                EmployeeAccrual(employee_id=emp.id, leave_type_id=lt_parental.id, year=2026, annual_entitlement=0.0, carried_over=0.0, manual_adjustments=0.0),
             ])
         db.add_all(accruals)
         db.flush()
 
-        # 9. Pre-populate Sample Requests & Demonstrable Scenarios
-        # Scenario A: Approved historical leave for Priya (Used days)
-        req_priya_past = LeaveRequest(
-            employee_id=emp_priya.id,
+        # 11. Historical & Pending Requests
+        # Request 1: Arun Kumar - Pending Annual Leave (Sep 7 to Sep 11, 2026 = 5 working days)
+        req_arun = LeaveRequest(
+            employee_id=emp_arun.id,
             leave_type_id=lt_annual.id,
-            start_date=datetime.date(2026, 2, 9),
-            end_date=datetime.date(2026, 2, 13),
-            calendar_days=5,
-            weekend_days=0,
-            holiday_days=0,
+            start_date=datetime.date(2026, 9, 7),
+            end_date=datetime.date(2026, 9, 11),
+            calendar_days=5.0,
             working_days=5.0,
-            reason="Family gathering in hometown",
-            status=LeaveRequestStatus.APPROVED,
-        )
-        db.add(req_priya_past)
-        db.flush()
-
-        step_priya_1 = ApprovalStep(
-            leave_request_id=req_priya_past.id,
-            approver_id=emp_ananya.id,
-            required_role=ApprovalRole.MANAGER,
-            step_order=1,
-            status=ApprovalStepStatus.APPROVED,
-            comments="Approved. Coverage coordinated.",
-            actioned_at=datetime.datetime(2026, 2, 2, 10, 30, tzinfo=datetime.timezone.utc),
-        )
-        db.add(step_priya_1)
-
-        # Scenario B: Pre-existing overlapping leave for Karthik in Chennai (triggers conflict detector during Arun's inquiry)
-        req_karthik_overlap = LeaveRequest(
-            employee_id=emp_karthik.id,
-            leave_type_id=lt_annual.id,
-            start_date=datetime.date(2026, 8, 20),
-            end_date=datetime.date(2026, 8, 24),
-            calendar_days=5,
-            weekend_days=2,
-            holiday_days=1,
-            working_days=2.0,
-            reason="Scheduled infrastructure maintenance downtime personal leave",
-            status=LeaveRequestStatus.APPROVED,
-        )
-        db.add(req_karthik_overlap)
-        db.flush()
-
-        step_karthik_1 = ApprovalStep(
-            leave_request_id=req_karthik_overlap.id,
-            approver_id=emp_rajesh.id,
-            required_role=ApprovalRole.MANAGER,
-            step_order=1,
-            status=ApprovalStepStatus.APPROVED,
-            comments="Approved.",
-            actioned_at=datetime.datetime(2026, 8, 1, 14, 0, tzinfo=datetime.timezone.utc),
-        )
-        db.add(step_karthik_1)
-
-        # Scenario C: Pre-populated Pending Request for Priya requiring Ananya's approval
-        req_priya_pending = LeaveRequest(
-            employee_id=emp_priya.id,
-            leave_type_id=lt_annual.id,
-            start_date=datetime.date(2026, 9, 14),
-            end_date=datetime.date(2026, 9, 18),
-            calendar_days=5,
-            weekend_days=0,
-            holiday_days=0,
-            working_days=5.0,
-            reason="Attending distributed systems conference and personal vacation",
+            weekend_days=0.0,
+            holiday_days=0.0,
             status=LeaveRequestStatus.PENDING,
+            reason="Annual family vacation and rest",
         )
-        db.add(req_priya_pending)
+        db.add(req_arun)
         db.flush()
 
-        step_priya_pending_1 = ApprovalStep(
-            leave_request_id=req_priya_pending.id,
-            approver_id=emp_ananya.id,
-            required_role=ApprovalRole.MANAGER,
+        step1 = ApprovalStep(
+            request_id=req_arun.id,
             step_order=1,
+            required_role="MANAGER",
+            approver_id=emp_rajesh.id,
             status=ApprovalStepStatus.PENDING,
         )
-        db.add(step_priya_pending_1)
+        step2 = ApprovalStep(
+            request_id=req_arun.id,
+            step_order=2,
+            required_role="DEPT_HEAD",
+            approver_id=emp_ananya.id,
+            status=ApprovalStepStatus.PENDING,
+        )
+        db.add_all([step1, step2])
 
-        # 10. Audit Logs
-        db.add_all([
-            AuditLog(actor_email=u_sarah.email, action="SYSTEM_INIT", entity_type="SYSTEM", entity_id="GLOBAL", new_state={"initialized": True}),
-            AuditLog(actor_email=u_priya.email, action="LEAVE_SUBMIT", entity_type="LEAVE_REQUEST", entity_id=req_priya_past.id, new_state={"status": "PENDING"}),
-            AuditLog(actor_email=u_ananya.email, action="LEAVE_APPROVE", entity_type="LEAVE_REQUEST", entity_id=req_priya_past.id, previous_state={"status": "PENDING"}, new_state={"status": "APPROVED"}),
-        ])
+        # Request 2: Karthik Venkat - Approved Sick Leave (Feb 2 to Feb 3, 2026 = 2 days)
+        req_karthik = LeaveRequest(
+            employee_id=emp_karthik.id,
+            leave_type_id=lt_sick.id,
+            start_date=datetime.date(2026, 2, 2),
+            end_date=datetime.date(2026, 2, 3),
+            calendar_days=2.0,
+            working_days=2.0,
+            weekend_days=0.0,
+            holiday_days=0.0,
+            status=LeaveRequestStatus.APPROVED,
+            reason="Viral fever and rest",
+        )
+        db.add(req_karthik)
+        db.flush()
 
-        # 11. Initial Notifications
-        db.add_all([
-            Notification(user_id=u_ananya.id, title="Leave Request Requires Approval", message="Priya Sharma submitted a leave request for 5 days.", type="APPROVAL_REQUIRED", link_url="/approvals"),
-            Notification(user_id=u_arun.id, title="Welcome to PTO Orchestration", message="Your leave accounts for 2026 are active and ready.", type="INFO", link_url="/dashboard"),
-        ])
+        step_karthik = ApprovalStep(
+            request_id=req_karthik.id,
+            step_order=1,
+            required_role="MANAGER",
+            approver_id=emp_rajesh.id,
+            status=ApprovalStepStatus.APPROVED,
+            comments="Approved. Get well soon.",
+            actioned_at=datetime.datetime(2026, 2, 2, 9, 30, tzinfo=datetime.timezone.utc),
+        )
+        db.add(step_karthik)
+
+        # 12. Notifications
+        notif_arun = Notification(
+            user_id=u_arun.id,
+            title="Leave Request Submitted",
+            message="Your leave request for 5 working days (Sep 7 – Sep 11) is routed to Rajesh Nair for Step 1 approval.",
+        )
+        notif_rajesh = Notification(
+            user_id=u_rajesh.id,
+            title="New Approval Pending",
+            message="Arun Kumar submitted a request for 5 working days (Sep 7 – Sep 11) requiring your review.",
+        )
+        db.add_all([notif_arun, notif_rajesh])
 
         db.commit()
-        print("Database successfully seeded with 6 employees, locations, holiday calendars, policies, and sample requests!")
-
+        print("Database seeded successfully!")
+        print(f"Bootstrap HR Admin: {settings.BOOTSTRAP_ADMIN_EMAIL} / {settings.BOOTSTRAP_ADMIN_PASSWORD}")
     except Exception as e:
         db.rollback()
         print(f"Error seeding database: {e}")
-        raise
+        raise e
     finally:
         db.close()
 
 
-def check_and_seed():
-    init_db()
-    seed_database()
+def ensure_bootstrap_admin(db: Session):
+    admin_exists = db.query(User).filter(User.role == UserRole.HR_ADMIN).first()
+    if not admin_exists:
+        print(f"Creating bootstrap HR Admin ({settings.BOOTSTRAP_ADMIN_EMAIL})...")
+        dept_hr = db.query(Department).filter(Department.code == "HR").first()
+        loc = db.query(Location).first()
+        admin_pwd_hash = get_password_hash(settings.BOOTSTRAP_ADMIN_PASSWORD)
+        u_admin = User(
+            email=settings.BOOTSTRAP_ADMIN_EMAIL,
+            password_hash=admin_pwd_hash,
+            role=UserRole.HR_ADMIN,
+            status=UserStatus.ACTIVE,
+            is_active=True,
+        )
+        db.add(u_admin)
+        db.flush()
+        emp_admin = Employee(
+            user_id=u_admin.id,
+            employee_code="EMP-BOOT-001",
+            first_name="Bootstrap",
+            last_name="HR Admin",
+            email=u_admin.email,
+            department_id=dept_hr.id if dept_hr else None,
+            location_id=loc.id if loc else None,
+            designation="Principal HR Administrator",
+            hire_date=datetime.date.today(),
+        )
+        db.add(emp_admin)
+        db.commit()
+        print(f"Bootstrap HR Admin created: {settings.BOOTSTRAP_ADMIN_EMAIL}")
 
+
+check_and_seed = seed_database
 
 if __name__ == "__main__":
-    check_and_seed()
+    seed_database()

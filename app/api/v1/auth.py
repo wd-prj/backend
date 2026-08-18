@@ -1,4 +1,4 @@
-import uuid
+import hashlib
 import datetime
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
@@ -7,17 +7,20 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import verify_password, get_password_hash, create_access_token
 from app.core.deps import get_current_user
-from app.models.user import User, UserRole
+from app.models.user import User, UserRole, UserStatus
 from app.models.employee import Employee
-from app.models.organization import Department, Location
-from app.models.leave import LeaveType, LeavePolicy, AccrualPolicy, EmployeeAccrual
+from app.models.organization import Department, Team, Location
+from app.models.invitation import Invitation
+from app.models.audit import AuditLog
 from app.schemas.auth import (
     LoginRequest,
-    RegisterRequest,
     TokenResponse,
-    PersonaOption,
     OrgMetaResponse,
     OrgOption,
+)
+from app.schemas.provisioning import (
+    InvitationDetailsResponse,
+    AcceptInvitationRequest,
 )
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -25,7 +28,7 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 @router.get("/org-metadata", response_model=OrgMetaResponse)
 def get_org_metadata(db: Session = Depends(get_db)):
-    """Returns available departments and locations for user registration."""
+    """Returns available departments and locations for provisioning."""
     depts = db.query(Department).order_by(Department.name.asc()).all()
     locs = db.query(Location).order_by(Location.name.asc()).all()
     return OrgMetaResponse(
@@ -34,110 +37,164 @@ def get_org_metadata(db: Session = Depends(get_db)):
     )
 
 
-@router.post("/register", response_model=TokenResponse)
-def register(
-    register_data: RegisterRequest,
-    response: Response,
+@router.get("/invitation-details", response_model=InvitationDetailsResponse)
+def get_invitation_details(
+    token: str,
     db: Session = Depends(get_db),
 ):
-    """Registers a new user and employee profile, sets default leave accruals, and logs in."""
-    email_clean = register_data.email.lower().strip()
-    existing_user = db.query(User).filter(User.email == email_clean).first()
-    if existing_user:
+    """Public endpoint to validate an invitation token and view organizational assignment."""
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="An account with this work email already exists.",
+            detail="Invitation token is required.",
         )
 
-    # Resolve department and location
-    dept = None
-    if register_data.department_id:
-        dept = db.query(Department).filter(Department.id == register_data.department_id).first()
-    if not dept:
-        dept = db.query(Department).first()
+    token_hash = hashlib.sha256(token.strip().encode()).hexdigest()
+    now = datetime.datetime.now(datetime.timezone.utc)
 
-    loc = None
-    if register_data.location_id:
-        loc = db.query(Location).filter(Location.id == register_data.location_id).first()
-    if not loc:
-        loc = db.query(Location).first()
-
-    if not dept or not loc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Organization setup incomplete (missing department or location).",
+    invitation = (
+        db.query(Invitation)
+        .options(
+            joinedload(Invitation.invited_user)
+            .joinedload(User.employee)
+            .joinedload(Employee.department),
+            joinedload(Invitation.invited_user)
+            .joinedload(User.employee)
+            .joinedload(Employee.location),
+            joinedload(Invitation.invited_user)
+            .joinedload(User.employee)
+            .joinedload(Employee.team),
         )
-
-    # Find a default manager in the department if any
-    manager = (
-        db.query(Employee)
-        .join(User)
-        .filter(
-            Employee.department_id == dept.id,
-            User.role.in_([UserRole.MANAGER, UserRole.HR_ADMIN]),
-        )
+        .filter(Invitation.token_hash == token_hash)
         .first()
     )
 
-    # 1. Create User
-    new_user = User(
-        email=email_clean,
-        password_hash=get_password_hash(register_data.password),
-        role=register_data.role or UserRole.EMPLOYEE,
-        is_active=True,
-    )
-    db.add(new_user)
-    db.flush()
-
-    # 2. Create Employee
-    new_code = f"EMP-{uuid.uuid4().hex[:6].upper()}"
-    new_employee = Employee(
-        user_id=new_user.id,
-        employee_code=new_code,
-        email=email_clean,
-        first_name=register_data.full_name.split()[0] if register_data.full_name else "Employee",
-        last_name=" ".join(register_data.full_name.split()[1:]) if " " in register_data.full_name else "",
-        designation=register_data.designation or "Team Member",
-        department_id=dept.id,
-        location_id=loc.id,
-        manager_id=manager.id if manager else None,
-        hire_date=datetime.date.today(),
-        is_active=True,
-    )
-    db.add(new_employee)
-    db.flush()
-
-    # 3. Create default leave accruals for active leave types
-    current_year = datetime.date.today().year
-    leave_types = db.query(LeaveType).filter(LeaveType.is_active == True).all()
-    default_entitlements = {
-        "ANNUAL": 18.0,
-        "CASUAL": 12.0,
-        "SICK": 10.0,
-        "PARENTAL": 0.0,
-    }
-
-    for lt in leave_types:
-        entitlement = default_entitlements.get(lt.code, 10.0)
-        accrual = EmployeeAccrual(
-            employee_id=new_employee.id,
-            leave_type_id=lt.id,
-            year=current_year,
-            annual_entitlement=entitlement,
-            carried_over=0.0,
-            manual_adjustments=0.0,
+    if not invitation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invalid invitation token. Please check your invitation link.",
         )
-        db.add(accrual)
+
+    if invitation.used_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This invitation has already been accepted. Please sign in with your credentials.",
+        )
+
+    if invitation.expires_at < now:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This invitation has expired (valid for 48 hours). Please contact your administrator for a new invitation.",
+        )
+
+    user = invitation.invited_user
+    emp = user.employee
+    if not emp:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Employee profile not found for invited user.",
+        )
+
+    mgr = (
+        db.query(Employee).filter(Employee.id == emp.primary_manager_id).first()
+        if emp.primary_manager_id
+        else None
+    )
+
+    return InvitationDetailsResponse(
+        invitation_id=invitation.id,
+        email=user.email,
+        full_name=emp.full_name,
+        role=user.role,
+        department_name=emp.department.name if emp.department else "General",
+        team_name=emp.team.name if emp.team else "General",
+        manager_name=mgr.full_name if mgr else None,
+        location_name=emp.location.name if emp.location else "HQ",
+        designation=emp.designation,
+        expires_at=invitation.expires_at,
+    )
+
+
+@router.post("/accept-invitation", response_model=TokenResponse)
+def accept_invitation(
+    req: AcceptInvitationRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    """Accepts an organization invitation, sets secure password, and activates account."""
+    if not req.token or not req.password or len(req.password) < 6:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A valid invitation token and password (at least 6 characters) are required.",
+        )
+
+    token_hash = hashlib.sha256(req.token.strip().encode()).hexdigest()
+    now = datetime.datetime.now(datetime.timezone.utc)
+
+    invitation = (
+        db.query(Invitation)
+        .options(
+            joinedload(Invitation.invited_user).joinedload(User.employee).joinedload(Employee.department),
+            joinedload(Invitation.invited_user).joinedload(User.employee).joinedload(Employee.location),
+        )
+        .filter(Invitation.token_hash == token_hash)
+        .first()
+    )
+
+    if not invitation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invalid invitation token.",
+        )
+
+    if invitation.used_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This invitation has already been accepted. Please sign in.",
+        )
+
+    if invitation.expires_at < now:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This invitation has expired. Please ask your administrator to resend the invitation.",
+        )
+
+    user = invitation.invited_user
+    emp = user.employee
+    if not emp:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Employee profile missing.",
+        )
+
+    # 1. Update user password and activate
+    user.password_hash = get_password_hash(req.password)
+    user.status = UserStatus.ACTIVE
+    user.is_active = True
+    emp.is_active = True
+
+    # 2. Mark invitation single-use redeemed
+    invitation.used_at = now
+
+    # 3. Log audit event
+    db.add(AuditLog(
+        entity_type="USER",
+        entity_id=user.id,
+        action="INVITATION_ACCEPTED",
+        actor_id=user.id,
+        actor_email=user.email,
+        new_state={"email": user.email, "role": user.role.value, "status": "ACTIVE"},
+    ))
 
     db.commit()
-    db.refresh(new_user)
-    db.refresh(new_employee)
+    db.refresh(user)
+    db.refresh(emp)
 
-    # Create session token and set cookie
+    # 4. Issue JWT and set session cookie
     token = create_access_token(
-        subject=new_user.id,
-        role=new_user.role.value,
-        employee_id=new_employee.id,
+        subject=user.id,
+        role=user.role.value,
+        employee_id=emp.id,
     )
 
     response.set_cookie(
@@ -153,16 +210,16 @@ def register(
 
     return TokenResponse(
         access_token=token,
-        user_id=new_user.id,
-        email=new_user.email,
-        role=new_user.role,
-        employee_id=new_employee.id,
-        employee_name=new_employee.full_name,
-        location_id=new_employee.location_id,
-        location_name=loc.name,
-        department_id=new_employee.department_id,
-        department_name=dept.name,
-        designation=new_employee.designation,
+        user_id=user.id,
+        email=user.email,
+        role=user.role,
+        employee_id=emp.id,
+        employee_name=emp.full_name,
+        location_id=emp.location_id,
+        location_name=emp.location.name if emp.location else None,
+        department_id=emp.department_id,
+        department_name=emp.department.name if emp.department else None,
+        designation=emp.designation,
     )
 
 
@@ -188,10 +245,16 @@ def login(
             detail="Invalid work email or password.",
         )
 
-    if not user.is_active:
+    if user.status == UserStatus.INVITED:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="User account is inactive.",
+            detail="Your invitation has not been accepted yet. Please check your invitation email.",
+        )
+
+    if not user.is_active or user.status != UserStatus.ACTIVE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Account is {user.status.value.lower()}. Please contact HR.",
         )
 
     emp_id = user.employee.id if user.employee else None

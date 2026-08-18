@@ -6,7 +6,7 @@ from app.models.base import Base, TimestampMixin, generate_uuid
 
 if TYPE_CHECKING:
     from app.models.user import User
-    from app.models.organization import Location, Department
+    from app.models.organization import Location, Department, Team
     from app.models.leave import EmployeeAccrual
     from app.models.request import LeaveRequest, ApprovalStep
 
@@ -28,8 +28,14 @@ class Employee(Base, TimestampMixin):
     department_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("departments.id", ondelete="RESTRICT"), nullable=False, index=True
     )
+    team_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("teams.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     location_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("locations.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    primary_manager_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("employees.id", ondelete="SET NULL"), nullable=True, index=True
     )
     manager_id: Mapped[Optional[str]] = mapped_column(
         String(36), ForeignKey("employees.id", ondelete="SET NULL"), nullable=True, index=True
@@ -43,14 +49,17 @@ class Employee(Base, TimestampMixin):
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="employee")
     department: Mapped["Department"] = relationship("Department", back_populates="employees")
+    team: Mapped[Optional["Team"]] = relationship(
+        "Team", foreign_keys=[team_id], back_populates="members"
+    )
     location: Mapped["Location"] = relationship("Location", back_populates="employees")
     
     # Manager / Direct Reports hierarchy
     manager: Mapped[Optional["Employee"]] = relationship(
-        "Employee", remote_side=[id], back_populates="direct_reports"
+        "Employee", foreign_keys=[primary_manager_id], remote_side=[id], back_populates="direct_reports"
     )
     direct_reports: Mapped[List["Employee"]] = relationship(
-        "Employee", back_populates="manager"
+        "Employee", foreign_keys=[primary_manager_id], back_populates="manager"
     )
 
     accruals: Mapped[List["EmployeeAccrual"]] = relationship(

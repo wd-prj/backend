@@ -40,6 +40,35 @@ class Department(Base, TimestampMixin):
 
     # Relationships
     employees: Mapped[List["Employee"]] = relationship("Employee", back_populates="department")
+    teams: Mapped[List["Team"]] = relationship(
+        "Team", back_populates="department", cascade="all, delete-orphan"
+    )
+
+
+class Team(Base, TimestampMixin):
+    __tablename__ = "teams"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=generate_uuid
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    code: Mapped[str] = mapped_column(String(50), nullable=False)
+    department_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("departments.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    manager_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("employees.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Relationships
+    department: Mapped["Department"] = relationship("Department", back_populates="teams")
+    manager: Mapped[Optional["Employee"]] = relationship(
+        "Employee", foreign_keys=[manager_id]
+    )
+    members: Mapped[List["Employee"]] = relationship(
+        "Employee", foreign_keys="Employee.team_id", back_populates="team"
+    )
 
 
 class HolidayCalendar(Base, TimestampMixin):

@@ -12,7 +12,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    PROJECT_NAME: str = "Enterprise Leave & PTO Orchestration Platform"
+    PROJECT_NAME: str = "ZenithHR Enterprise Leave & PTO Orchestration Platform"
     VERSION: str = "1.0.0"
     API_V1_STR: str = "/api/v1"
 
@@ -27,6 +27,17 @@ class Settings(BaseSettings):
     SESSION_COOKIE_SECURE: bool = False
     SESSION_COOKIE_SAMESITE: str = "lax"
 
+    # Bootstrap HR Admin
+    BOOTSTRAP_ADMIN_EMAIL: str = "admin@zenithhr.com"
+    BOOTSTRAP_ADMIN_PASSWORD: str = "ZenithAdmin2026!"
+
+    # Email & Resend Provider
+    EMAIL_PROVIDER: str = "resend"  # "resend" | "mock" | "console"
+    RESEND_API_KEY: str = "re_gWX4zeKa_J1H2Tns9m81hQZM31Nituqbe"
+    EMAIL_FROM: str = "ZenithHR <onboarding@resend.dev>"
+    APP_URL: str = "http://localhost:3000"
+    INVITATION_EXPIRE_HOURS: int = 48
+
     # CORS
     CORS_ORIGINS: List[str] = [
         "http://localhost:3000",
@@ -36,7 +47,6 @@ class Settings(BaseSettings):
     ]
 
     # LLM & AI Provider Configuration
-    # Options: "mock", "openai", "openrouter", "ollama", "vllm", "custom"
     LLM_PROVIDER: str = "mock"
     LLM_API_KEY: str = ""
     LLM_MODEL: str = "gpt-4o-mini"
