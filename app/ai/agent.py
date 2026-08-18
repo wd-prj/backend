@@ -6,7 +6,8 @@ from langgraph.graph.message import add_messages
 from sqlalchemy.orm import Session
 from app.ai.provider import get_ai_model
 from app.ai.tools import build_tool_registry
-from app.ai.prompts import LEAVE_AGENT_SYSTEM_PROMPT
+from app.ai.prompts import build_system_prompt
+from app.services.employee_service import EmployeeService
 
 
 class LeaveAgentState(TypedDict):
@@ -28,6 +29,14 @@ def run_leave_agent(
     Executes the single primary LeaveAgent LangGraph workflow.
     Orchestrates grounded tool execution and returns explainable responses.
     """
+    employee_service = EmployeeService(db)
+    emp = employee_service.get_employee_by_id(employee_id)
+
+    emp_name = emp.full_name if emp else "Employee"
+    emp_desig = emp.designation if emp else "Staff"
+    dept_name = emp.department.name if emp and emp.department else "General"
+    loc_name = emp.location.name if emp and emp.location else "HQ"
+
     # 1. Build bound tools
     tools = build_tool_registry(db, employee_id)
     tool_map = {t.name: t for t in tools}
@@ -36,8 +45,16 @@ def run_leave_agent(
     model = get_ai_model()
     model_with_tools = model.bind_tools(tools)
 
-    # 3. Setup Initial State
-    initial_messages: List[BaseMessage] = [SystemMessage(content=LEAVE_AGENT_SYSTEM_PROMPT)]
+    # 3. Setup Initial State with dynamically enriched caller context
+    sys_prompt = build_system_prompt(
+        employee_name=emp_name,
+        designation=emp_desig,
+        department_name=dept_name,
+        location_name=loc_name,
+        employee_id=employee_id,
+        current_date="2026-08-18",
+    )
+    initial_messages: List[BaseMessage] = [SystemMessage(content=sys_prompt)]
     
     if chat_history:
         for item in chat_history[-6:]:  # Keep recent context
@@ -123,8 +140,8 @@ def run_leave_agent(
         "messages": initial_messages,
         "employee_id": employee_id,
         "user_role": "EMPLOYEE",
-        "location_id": "",
-        "department_id": "",
+        "location_id": emp.location_id if emp else "",
+        "department_id": emp.department_id if emp else "",
         "tool_history": [],
     })
 

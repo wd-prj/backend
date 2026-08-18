@@ -9,7 +9,7 @@ from app.core.config import settings
 
 class MockLeaveChatModel(BaseChatModel):
     """
-    Deterministic Mock LLM Provider for offline evaluation and hackathon demo testing.
+    Deterministic Mock LLM Provider for offline evaluation and testing.
     Understands HR leave queries, invokes required LangGraph tools, and constructs
     grounded, explainable responses using real domain data.
     """
