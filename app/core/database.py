@@ -32,6 +32,9 @@ def init_db() -> None:
     import app.models.audit  # noqa
     import app.models.invitation  # noqa
 
+    # Create tables first
+    Base.metadata.create_all(bind=engine)
+
     # Create enum type & schema migrations if not exist
     with engine.begin() as conn:
         conn.execute(text("""
@@ -43,20 +46,22 @@ def init_db() -> None:
             END$$;
         """))
         
-        # Add columns if missing
+        # Add columns if missing in existing tables
         conn.execute(text("""
             DO $$
             BEGIN
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='status') THEN
-                    ALTER TABLE users ADD COLUMN status userstatus DEFAULT 'ACTIVE' NOT NULL;
+                IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='users') THEN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='status') THEN
+                        ALTER TABLE users ADD COLUMN status userstatus DEFAULT 'ACTIVE' NOT NULL;
+                    END IF;
                 END IF;
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='employees' AND column_name='team_id') THEN
-                    ALTER TABLE employees ADD COLUMN team_id VARCHAR(36);
-                END IF;
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='employees' AND column_name='primary_manager_id') THEN
-                    ALTER TABLE employees ADD COLUMN primary_manager_id VARCHAR(36);
+                IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='employees') THEN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='employees' AND column_name='team_id') THEN
+                        ALTER TABLE employees ADD COLUMN team_id VARCHAR(36);
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='employees' AND column_name='primary_manager_id') THEN
+                        ALTER TABLE employees ADD COLUMN primary_manager_id VARCHAR(36);
+                    END IF;
                 END IF;
             END$$;
         """))
-
-    Base.metadata.create_all(bind=engine)

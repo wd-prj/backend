@@ -351,14 +351,14 @@ def seed_database():
         db.flush()
 
         step1 = ApprovalStep(
-            request_id=req_arun.id,
+            leave_request_id=req_arun.id,
             step_order=1,
             required_role="MANAGER",
             approver_id=emp_rajesh.id,
             status=ApprovalStepStatus.PENDING,
         )
         step2 = ApprovalStep(
-            request_id=req_arun.id,
+            leave_request_id=req_arun.id,
             step_order=2,
             required_role="DEPT_HEAD",
             approver_id=emp_ananya.id,
@@ -377,13 +377,13 @@ def seed_database():
             weekend_days=0.0,
             holiday_days=0.0,
             status=LeaveRequestStatus.APPROVED,
-            reason="Viral fever and rest",
+            reason="Severe viral fever and rest under physician advice",
         )
         db.add(req_karthik)
         db.flush()
 
         step_karthik = ApprovalStep(
-            request_id=req_karthik.id,
+            leave_request_id=req_karthik.id,
             step_order=1,
             required_role="MANAGER",
             approver_id=emp_rajesh.id,
