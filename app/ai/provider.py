@@ -10,6 +10,17 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
+def fmt_days(val: Any) -> str:
+    """Formats numeric days cleanly (e.g. 3.0 -> '3', 2.5 -> '2.5')."""
+    if val is None:
+        return "0"
+    try:
+        f = float(val)
+        return str(int(f)) if f.is_integer() else f"{f:.1f}"
+    except (ValueError, TypeError):
+        return str(val)
+
+
 class MockLeaveChatModel(BaseChatModel):
     """
     Deterministic Mock LLM Provider for offline evaluation and testing.
@@ -60,12 +71,12 @@ class MockLeaveChatModel(BaseChatModel):
 
             if val:
                 is_valid = val.get("is_valid", True)
-                wk_days = val.get("working_days", 0)
-                cal_days = val.get("calendar_days", 0)
-                wknd_days = val.get("weekend_days", 0)
-                hol_days = val.get("holiday_days", 0)
-                avail_before = val.get("available_balance_before", 0)
-                avail_after = val.get("available_balance_after", 0)
+                wk_days = fmt_days(val.get("working_days", 0))
+                cal_days = fmt_days(val.get("calendar_days", 0))
+                wknd_days = fmt_days(val.get("weekend_days", 0))
+                hol_days = fmt_days(val.get("holiday_days", 0))
+                avail_before = fmt_days(val.get("available_balance_before", 0))
+                avail_after = fmt_days(val.get("available_balance_after", 0))
                 route = val.get("approval_route", ["Manager"])
                 violations = val.get("policy_violations", [])
 
@@ -88,10 +99,10 @@ class MockLeaveChatModel(BaseChatModel):
                         f"### Reason & Violations\n" + "\n".join([f"* ❌ {v}" for v in violations])
                     )
             elif calc:
-                wk_days = calc.get("working_days", 0)
-                cal_days = calc.get("calendar_days", 0)
-                wknd_days = calc.get("weekend_days", 0)
-                hol_days = calc.get("holiday_days", 0)
+                wk_days = fmt_days(calc.get("working_days", 0))
+                cal_days = fmt_days(calc.get("calendar_days", 0))
+                wknd_days = fmt_days(calc.get("weekend_days", 0))
+                hol_days = fmt_days(calc.get("holiday_days", 0))
                 synthesis_parts.append(
                     f"### Working Day Impact Analysis\n"
                     f"The requested window spans **{cal_days} calendar days** containing:\n"
@@ -101,7 +112,10 @@ class MockLeaveChatModel(BaseChatModel):
                 )
             elif bal:
                 balances = bal if isinstance(bal, list) else []
-                bal_lines = [f"* **{b.get('leave_type_name')}**: {b.get('available_balance')} days available ({b.get('pending_reserved')} pending, {b.get('approved_used')} used)" for b in balances]
+                bal_lines = [
+                    f"* **{b.get('leave_type_name')}**: {fmt_days(b.get('available_balance'))} days available ({fmt_days(b.get('pending_reserved'))} pending, {fmt_days(b.get('approved_used'))} used)"
+                    for b in balances
+                ]
                 synthesis_parts.append(
                     f"### Current Verified Leave Balances\n" + "\n".join(bal_lines)
                 )
@@ -185,7 +199,6 @@ def get_ai_model() -> BaseChatModel:
     if provider == "mock" or not api_key:
         return MockLeaveChatModel()
 
-    # If model has provider prefix like openai/ or deepseek/ strip it for base url or pass directly
     clean_model = model_name.replace("openai/", "").replace("deepseek/", "")
 
     return ChatOpenAI(
