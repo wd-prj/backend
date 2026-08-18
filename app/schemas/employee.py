@@ -34,13 +34,20 @@ class EmployeeProfileOut(BaseModel):
     first_name: str
     last_name: str
     full_name: str
+    employee_name: Optional[str] = None
     email: str
     role: UserRole
     designation: str
     hire_date: datetime.date
     is_active: bool
     avatar_url: Optional[str] = None
-    department: DepartmentOut
-    location: LocationOut
+    department: Optional[DepartmentOut] = None
+    department_name: Optional[str] = None
+    department_id: Optional[str] = None
+    location: Optional[LocationOut] = None
+    location_name: Optional[str] = None
+    location_id: Optional[str] = None
+    team_name: Optional[str] = None
+    team_id: Optional[str] = None
     manager_name: Optional[str] = None
     manager_id: Optional[str] = None

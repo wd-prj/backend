@@ -22,6 +22,7 @@ def get_my_profile(
         first_name=current_employee.first_name,
         last_name=current_employee.last_name,
         full_name=current_employee.full_name,
+        employee_name=current_employee.full_name,
         email=current_employee.email,
         role=current_employee.user.role,
         designation=current_employee.designation,
@@ -33,16 +34,22 @@ def get_my_profile(
             name=current_employee.department.name,
             code=current_employee.department.code,
             description=current_employee.department.description,
-        ),
+        ) if current_employee.department else None,
+        department_name=current_employee.department.name if current_employee.department else "General",
+        department_id=current_employee.department_id,
         location=LocationOut(
             id=current_employee.location.id,
             name=current_employee.location.name,
             country=current_employee.location.country,
             timezone=current_employee.location.timezone,
             description=current_employee.location.description,
-        ),
+        ) if current_employee.location else None,
+        location_name=current_employee.location.name if current_employee.location else "HQ",
+        location_id=current_employee.location_id,
+        team_name=current_employee.team.name if current_employee.team else "General",
+        team_id=current_employee.team_id,
         manager_name=current_employee.manager.full_name if current_employee.manager else None,
-        manager_id=current_employee.manager_id,
+        manager_id=current_employee.primary_manager_id or current_employee.manager_id,
     )
 
 
