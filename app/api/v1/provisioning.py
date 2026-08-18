@@ -202,16 +202,24 @@ def invite_employee(
             detail="Forbidden: Only Managers and HR Administrators can provision employee accounts.",
         )
 
+    manager_emp = current_user.employee
+
+    # Resolve team: if omitted by a manager, use the team managed by them or their assigned team
+    target_team_id = req.team_id
+    if not target_team_id and current_user.role == UserRole.MANAGER and manager_emp:
+        managed_team = db.query(Team).filter(Team.manager_id == manager_emp.id).first()
+        target_team_id = managed_team.id if managed_team else manager_emp.team_id
+
+    if not target_team_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Assigned team is required")
+
     # Check team existence
-    team = db.query(Team).filter(Team.id == req.team_id).first()
+    team = db.query(Team).filter(Team.id == target_team_id).first()
     if not team:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
 
     # If manager, verify authorization (must manage this team or department)
-    if current_user.role == UserRole.MANAGER:
-        manager_emp = current_user.employee
-        if not manager_emp:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Manager profile not linked")
+    if current_user.role == UserRole.MANAGER and manager_emp:
         if team.manager_id != manager_emp.id and team.department_id != manager_emp.department_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -226,16 +234,23 @@ def invite_employee(
             detail=f"An account with email {req.email} already exists.",
         )
 
-    dept = db.query(Department).filter(Department.id == req.department_id).first()
-    loc = db.query(Location).filter(Location.id == req.location_id).first()
+    # Auto-resolve department and location if not provided
+    target_dept_id = req.department_id or (manager_emp.department_id if manager_emp else team.department_id)
+    target_loc_id = req.location_id or (manager_emp.location_id if manager_emp else None)
+    if not target_loc_id:
+        first_loc = db.query(Location).first()
+        target_loc_id = first_loc.id if first_loc else None
+
+    dept = db.query(Department).filter(Department.id == target_dept_id).first()
+    loc = db.query(Location).filter(Location.id == target_loc_id).first()
     if not dept or not loc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department or Location not found")
 
     # Authoritative Primary Manager ID
     primary_manager_id = (
-        current_user.employee.id
-        if current_user.role == UserRole.MANAGER and current_user.employee
-        else req.primary_manager_id or team.manager_id
+        manager_emp.id
+        if current_user.role == UserRole.MANAGER and manager_emp
+        else req.primary_manager_id or team.manager_id or (manager_emp.id if manager_emp else None)
     )
 
     # Create User with INVITED status

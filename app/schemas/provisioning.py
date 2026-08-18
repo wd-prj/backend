@@ -16,9 +16,9 @@ class InviteManagerRequest(BaseModel):
 class InviteEmployeeRequest(BaseModel):
     full_name: str
     email: EmailStr
-    department_id: str
-    team_id: str
-    location_id: str
+    department_id: Optional[str] = None
+    team_id: Optional[str] = None
+    location_id: Optional[str] = None
     designation: str = "Software Engineer"
     primary_manager_id: Optional[str] = None
 
