@@ -1,12 +1,13 @@
 [project]
 name = "wtf-backend"
 version = "0.1.0"
-description = "Add your description here"
+description = "Enterprise AI-Powered Leave & Workforce Orchestration Platform"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "asyncpg>=0.31.0",
     "bcrypt>=5.0.0",
+    "email-validator>=2.3.0",
     "fastapi>=0.141.1",
     "httpx>=0.28.1",
     "langchain-core>=1.5.6",
@@ -14,12 +15,17 @@ dependencies = [
     "langgraph>=1.2.11",
     "passlib[bcrypt]>=1.7.4",
     "psycopg[binary]>=3.3.4",
-    "pydantic>=2.0.0",
+    "pydantic>=2.13.4",
     "pydantic-settings>=2.15.0",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "python-jose[cryptography]>=3.5.0",
     "python-multipart>=0.0.32",
-    "sqlalchemy>=2.0.0",
+    "sqlalchemy>=2.0.52",
     "uvicorn[standard]>=0.52.3",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+asyncio_mode = "auto"
