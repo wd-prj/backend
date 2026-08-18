@@ -155,7 +155,7 @@ def invite_manager(
     db.commit()
 
     # Dispatch Invitation Email via Resend
-    email_service.send_invitation_email(
+    email_res = email_service.send_invitation_email(
         to_email=req.email,
         name=req.full_name,
         role="Manager",
@@ -166,11 +166,13 @@ def invite_manager(
         raw_token=raw_token,
     )
 
+    invite_url = f"{settings.APP_URL}/accept-invitation?token={raw_token}"
     return {
-        "message": f"Invitation email sent to {req.email}",
+        "message": f"Invitation dispatched to {req.email}",
         "employee_id": emp.id,
         "invitation_id": invitation.id,
         "team_id": team.id,
+        "invite_url": invite_url,
     }
 
 
@@ -301,7 +303,7 @@ def invite_employee(
     manager_name = manager_obj.full_name if manager_obj else "Direct Lead"
 
     # Dispatch Email via Resend
-    email_service.send_invitation_email(
+    email_res = email_service.send_invitation_email(
         to_email=req.email,
         name=req.full_name,
         role="Employee",
@@ -312,10 +314,12 @@ def invite_employee(
         raw_token=raw_token,
     )
 
+    invite_url = f"{settings.APP_URL}/accept-invitation?token={raw_token}"
     return {
-        "message": f"Invitation email sent to {req.email}",
+        "message": f"Invitation dispatched to {req.email}",
         "employee_id": emp.id,
         "invitation_id": invitation.id,
+        "invite_url": invite_url,
     }
 
 
@@ -442,7 +446,7 @@ def resend_invite(
     mgr = db.query(Employee).filter(Employee.id == emp.primary_manager_id).first() if emp.primary_manager_id else None
 
     # Resend email
-    email_service.send_invitation_email(
+    email_res = email_service.send_invitation_email(
         to_email=target_user.email,
         name=emp.full_name,
         role=target_user.role.value.capitalize(),
@@ -453,4 +457,8 @@ def resend_invite(
         raw_token=raw_token,
     )
 
-    return {"message": f"Invitation resent to {target_user.email}"}
+    invite_url = f"{settings.APP_URL}/accept-invitation?token={raw_token}"
+    return {
+        "message": f"Invitation dispatched to {target_user.email}",
+        "invite_url": invite_url,
+    }

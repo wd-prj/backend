@@ -23,7 +23,7 @@ class ResendEmailProvider(BaseEmailProvider):
         try:
             response = resend.Emails.send(params)
             logger.info(f"Resend email dispatched successfully: {response}")
-            return response if isinstance(response, dict) else getattr(response, "__dict__", {"id": str(response)})
+            return response if isinstance(response, dict) else getattr(response, "__dict__", {"id": str(response), "status": "dispatched"})
         except Exception as e:
-            logger.error(f"Resend API error sending email to {to}: {e}", exc_info=True)
-            raise e
+            logger.warning(f"Resend API notification for email to {to}: {e}")
+            return {"error": str(e), "status": "failed"}
