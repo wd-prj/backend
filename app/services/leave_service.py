@@ -101,18 +101,44 @@ class LeaveService:
             manager_name = employee.manager.full_name
             manager_email = employee.manager.email
 
-        # Find Department Head (senior manager in the same department, e.g. VP)
+        # Find Department Head (senior manager in the same location & department, or overall department head)
         dept_head = (
             self.db.query(Employee)
             .join(User)
             .filter(
                 Employee.department_id == employee.department_id,
+                Employee.location_id == employee.location_id,
                 User.role == UserRole.MANAGER,
                 Employee.id != employee.id,
+                Employee.manager_id.is_(None),
             )
-            .order_by(Employee.created_at.asc())
             .first()
         )
+        if not dept_head:
+            dept_head = (
+                self.db.query(Employee)
+                .join(User)
+                .filter(
+                    Employee.department_id == employee.department_id,
+                    Employee.location_id == employee.location_id,
+                    User.role == UserRole.MANAGER,
+                    Employee.id != employee.id,
+                )
+                .order_by(Employee.created_at.asc())
+                .first()
+            )
+        if not dept_head:
+            dept_head = (
+                self.db.query(Employee)
+                .join(User)
+                .filter(
+                    Employee.department_id == employee.department_id,
+                    User.role == UserRole.MANAGER,
+                    Employee.id != employee.id,
+                )
+                .order_by(Employee.created_at.asc())
+                .first()
+            )
         if dept_head:
             dept_head_id = dept_head.id
             dept_head_name = dept_head.full_name
@@ -122,13 +148,24 @@ class LeaveService:
             dept_head_name = employee.manager.full_name
             dept_head_email = employee.manager.email
 
-        # Find HR Lead
+        # Find HR Lead (prefer same location first, fallback to company-wide)
         hr_admin_user = (
             self.db.query(User)
             .join(Employee)
-            .filter(User.role == UserRole.HR_ADMIN, User.is_active == True)
+            .filter(
+                User.role == UserRole.HR_ADMIN,
+                User.is_active == True,
+                Employee.location_id == employee.location_id,
+            )
             .first()
         )
+        if not hr_admin_user:
+            hr_admin_user = (
+                self.db.query(User)
+                .join(Employee)
+                .filter(User.role == UserRole.HR_ADMIN, User.is_active == True)
+                .first()
+            )
         if hr_admin_user and hr_admin_user.employee:
             hr_lead_id = hr_admin_user.employee.id
             hr_lead_name = hr_admin_user.employee.full_name

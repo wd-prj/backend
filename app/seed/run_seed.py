@@ -226,6 +226,56 @@ def seed_database():
         db.flush()
         team_platform.manager_id = emp_ananya.id
 
+        # Suresh Ramanathan (VP of Engineering & Chennai Head / Dept Head)
+        u_suresh = User(
+            email="chennai.depthead@company.com",
+            password_hash=default_pwd_hash,
+            role=UserRole.MANAGER,
+            status=UserStatus.ACTIVE,
+        )
+        db.add(u_suresh)
+        db.flush()
+        emp_suresh = Employee(
+            user_id=u_suresh.id,
+            employee_code="EMP-CHN-DH01",
+            first_name="Suresh",
+            last_name="Ramanathan",
+            email=u_suresh.email,
+            department_id=dept_eng.id,
+            team_id=team_core.id,
+            location_id=loc_chennai.id,
+            designation="VP of Engineering & Chennai Centre Head",
+            hire_date=datetime.date(2019, 6, 1),
+            avatar_url="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+        )
+        db.add(emp_suresh)
+        db.flush()
+
+        # Kavitha Raman (Chennai HR Operations Lead / HR Admin)
+        u_kavitha = User(
+            email="chennai.hr@company.com",
+            password_hash=default_pwd_hash,
+            role=UserRole.HR_ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        db.add(u_kavitha)
+        db.flush()
+        emp_kavitha = Employee(
+            user_id=u_kavitha.id,
+            employee_code="EMP-CHN-HR01",
+            first_name="Kavitha",
+            last_name="Raman",
+            email=u_kavitha.email,
+            department_id=dept_hr.id,
+            team_id=team_people.id,
+            location_id=loc_chennai.id,
+            designation="Chennai HR Operations Lead",
+            hire_date=datetime.date(2022, 3, 1),
+            avatar_url="https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80",
+        )
+        db.add(emp_kavitha)
+        db.flush()
+
         # Rajesh Nair (Core Services Engineering Manager - Chennai)
         u_rajesh = User(
             email="rajesh.nair@company.com",
@@ -244,8 +294,8 @@ def seed_database():
             department_id=dept_eng.id,
             team_id=team_core.id,
             location_id=loc_chennai.id,
-            primary_manager_id=emp_ananya.id,
-            manager_id=emp_ananya.id,
+            primary_manager_id=emp_suresh.id,
+            manager_id=emp_suresh.id,
             designation="Core Services Engineering Manager",
             hire_date=datetime.date(2022, 8, 1),
             avatar_url="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
@@ -336,7 +386,7 @@ def seed_database():
         db.flush()
 
         # 10. Employee Accruals (2026)
-        all_emps = [emp_admin, emp_sarah, emp_ananya, emp_rajesh, emp_arun, emp_priya, emp_karthik]
+        all_emps = [emp_admin, emp_sarah, emp_ananya, emp_suresh, emp_kavitha, emp_rajesh, emp_arun, emp_priya, emp_karthik]
         accruals = []
         for emp in all_emps:
             accruals.extend([
